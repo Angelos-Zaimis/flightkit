@@ -1,0 +1,165 @@
+FLIGHTKIT — TOOLS & TECH STACK OVERVIEW
+
+=== LANGUAGE / RUNTIME ===
+
+Python 3.12
+  The language itself. Current stable version at project start.
+
+uv
+  Env, dependency, and lockfile manager. Replaces pip + venv + poetry with one tool.
+  Also runs scripts (uv run), manages Python versions, and handles the project's
+  pyproject.toml/uv.lock.
+
+=== WEB FRAMEWORK ===
+
+FastAPI
+  The web framework. Async, built-in request/response validation via Pydantic,
+  auto-generates interactive API docs (Swagger UI at /docs) from your code.
+
+Uvicorn
+  ASGI server that actually runs the FastAPI app. Handles the network/HTTP layer.
+
+Pydantic v2
+  Data validation library. Defines the shape of request/response bodies and
+  validates incoming data against types automatically.
+
+pydantic-settings
+  Extension of Pydantic for reading typed config from environment variables / .env
+  files, instead of scattered os.getenv() calls.
+
+=== DATABASE ===
+
+PostgreSQL
+  The relational database itself. Runs locally via Docker.
+
+SQLAlchemy 2.0 (async)
+  ORM — maps Python classes to database tables. Async version matches FastAPI's
+  async request handling.
+
+Alembic
+  Database migration tool. Tracks schema changes as versioned scripts instead of
+  manual ALTER TABLE statements.
+
+=== DEV TOOLING ===
+
+Ruff
+  Linter + formatter in one tool. Replaces flake8 + black + isort. Catches bugs
+  (unused imports, common mistakes) and enforces consistent code style.
+
+pytest / pytest-asyncio / httpx
+  Testing stack. pytest runs tests, pytest-asyncio lets it run async test functions,
+  httpx provides an async client to call the FastAPI app in-memory during tests.
+
+pre-commit
+  Runs Ruff (and other checks) automatically before every git commit completes —
+  catches issues locally before they even reach CI.
+
+=== CONTAINERIZATION ===
+
+Docker / Docker Compose
+  Packages the app and its dependencies (Postgres, Prometheus, Grafana) into
+  containers that run identically on any machine. docker-compose.yml defines
+  and wires together all the services this project needs.
+
+=== OBSERVABILITY ===
+
+structlog
+  Structured logging library — produces logs as key=value/JSON data instead of
+  free text, so they're machine-searchable/filterable, not just human-readable.
+
+Sentry (sentry-sdk)
+  Error tracking. Catches unhandled exceptions in the running app, groups
+  duplicates into one "issue," shows full stack trace + request context.
+  Answers "what broke and why."
+
+Prometheus
+  Metrics collection. Scrapes a /metrics endpoint on the app periodically,
+  stores numeric data over time (request counts, latencies, error rates).
+  Answers "how healthy is the system, and is it degrading."
+
+prometheus-fastapi-instrumentator
+  Auto-instruments FastAPI routes for Prometheus — records metrics per endpoint
+  without writing tracking code by hand.
+
+Grafana
+  Dashboard/visualization layer on top of Prometheus (and other data sources).
+  Turns raw metrics into graphs and dashboards.
+
+OpenTelemetry
+  Distributed tracing. Breaks down where time was spent within a single request
+  (route code vs DB query vs external call) — complements Sentry (what broke)
+  and Prometheus (system-wide trend) with a per-request timeline view.
+
+=== RELIABILITY ===
+
+tenacity
+  Retry library. Wraps flaky external/network calls with exponential backoff and
+  a max attempt count, so a transient failure doesn't fail the whole request outright.
+
+=== SECURITY ===
+
+slowapi
+  Rate limiting per client IP. Prevents brute-force/abuse on real endpoints
+  (login attempts, scraping) via a decorator on individual routes.
+
+pip-audit
+  Scans installed dependencies for known CVEs, on demand and in CI.
+
+Dependabot
+  GitHub-native dependency scanning/updates. Opens automated PRs weekly for
+  vulnerable or outdated packages (Python deps, Docker base image, GitHub Actions).
+
+Non-root Docker user
+  Dockerfile runs the app as an unprivileged "appuser," not root — limits the
+  blast radius if the container is ever compromised.
+
+Redis
+  Shared in-memory store. Backs slowapi's rate-limit counters so all Gunicorn
+  workers/replicas share one count instead of each keeping its own.
+
+=== AUTH ===
+
+bcrypt
+  Password hashing (slow, salted, deliberately expensive to brute-force). Used
+  directly — passlib was dropped because it is unmaintained and breaks on bcrypt 4.1+.
+
+PyJWT
+  Creates/verifies JWT access tokens (signed with JWT_SECRET_KEY, carry the user id
+  as "sub" plus an expiry). Payload is readable by anyone; the signature prevents tampering.
+  Replaced python-jose: that pulled in "ecdsa", which has known unfixed timing-attack
+  CVEs (harmless here since we sign with HS256, not EC, but it permanently failed
+  pip-audit). PyJWT does the same job without that dependency.
+
+python-multipart
+  Lets FastAPI read form-data bodies. Required by OAuth2PasswordRequestForm (/login).
+
+email-validator (via pydantic[email])
+  Makes EmailStr fields validate that a value is a real email address.
+
+Locust (dev)
+  Load testing with plain-Python scenarios and a live web UI (tests/load/locustfile.py).
+
+=== PRODUCTION PROCESS MODEL ===
+
+Gunicorn (+ Uvicorn workers)
+  Runs multiple worker processes instead of one, so requests spread across CPU
+  cores and one slow request doesn't stall everything behind it. Gunicorn adds
+  process supervision (auto-restart crashed workers) on top of Uvicorn's own
+  worker model. Worker count uses the (2 x CPU cores) + 1 formula — see COMMANDS.txt.
+
+=== CI/CD ===
+
+GitHub Actions
+  Runs automated checks (Ruff lint/format, pytest, pip-audit) on every push/PR to
+  catch problems before merge. Config lives in .github/workflows/ci.yml.
+
+=== NOTES ===
+
+- Auth is built: /api/v1/auth/register, /login, /me (JWT bearer). Protect any route by
+  adding `current_user: CurrentUser` (app/api/deps.py).
+- CD (auto-deploy) deliberately not added yet — waiting on DigitalOcean vs AWS decision.
+- Postgres backups: recommendation is a managed DB (DO Managed Database / AWS RDS)
+  with built-in automated backups, not self-hosting Postgres in prod. Also waiting
+  on the DigitalOcean vs AWS decision to get concrete.
+- See COMMANDS.txt (gitignored, local only) for the actual terminal commands used
+  to install/run each of these tools.
