@@ -1,62 +1,42 @@
 # Flightkit
 
-FastAPI backend.
+Python SDK that orchestrates flight-price APIs (starting with [Zerolook](https://www.zerolook.ai/)):
+fan-out (one request → many concurrent searches), caching, and a confidence-based fallback to live fares.
 
-## Stack
+Unofficial — not affiliated with Zerolook.
 
-See [TOOLS.txt](./TOOLS.txt) for the full list of tools/libraries used and why.
-
-## Local development
+## Install
 
 ```bash
-uv sync
-docker compose up -d db
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
+pip install flightkit            # library only (httpx + pydantic)
+pip install "flightkit[api]"     # + FastAPI wrapper
+pip install "flightkit[mcp]"     # + MCP server
+pip install "flightkit[all]"     # everything
 ```
 
-Then check:
-- http://127.0.0.1:8000/docs — interactive API docs
-- http://127.0.0.1:8000/health — liveness check
-- http://127.0.0.1:8000/ready — readiness check (verifies DB connectivity)
+## Layout
 
-Copy `.env.example` to `.env` and fill in real values before running.
-
-## Full stack via Docker
-
-```bash
-docker compose up -d --build
+```
+src/flightkit/
+  core/         pure logic — no I/O, no FastAPI, no adapters imports
+  adapters/     implementations of core ports that call external services
+  entrypoints/  optional doors (FastAPI, MCP) that call into core
 ```
 
-Also brings up Postgres, Prometheus (`:9090`), and Grafana (`:3001`).
+Dependencies point inward: `entrypoints → core ← adapters`. `tests/test_architecture.py` enforces it.
 
-## Tests
+## Development
 
 ```bash
+uv sync                  # base install + dev tools (no extras)
+uv sync --extra all      # with FastAPI + MCP
 uv run pytest -v
+uv run ruff check . && uv run ruff format .
+uv run mypy
+uv build                 # sdist + wheel into dist/
 ```
 
-## Migrations
+Pre-commit hooks: `uv run pre-commit install` once per clone.
 
-Migrations are **not** run automatically on app startup — with multiple replicas,
-concurrent containers racing to migrate the schema on boot is a real failure mode.
-
-Run them as a separate, one-off step before deploying a new version:
-
-```bash
-uv run alembic upgrade head
-```
-
-In a deploy pipeline, this should run once (e.g. as a pre-deploy job/one-off task),
-complete successfully, and only then should the new app version start receiving traffic.
-
-## Code quality
-
-```bash
-uv run ruff check .
-uv run ruff format .
-uv run pip-audit
-```
-
-Pre-commit hooks run these automatically on `git commit` — see `.pre-commit-config.yaml`.
-Install once per clone: `uv run pre-commit install`.
+Note: `tests/test_architecture.py::test_base_install_has_no_optional_deps` fails by design when
+extras are installed — run `uv sync` (no extras) to get back to the base environment.
