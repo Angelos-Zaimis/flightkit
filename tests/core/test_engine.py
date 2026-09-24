@@ -1,6 +1,8 @@
 import asyncio
 from datetime import date, datetime, timezone
 
+import pytest
+
 from flightkit.core.engine import Engine
 from flightkit.models import Price, PricedTrip, Search
 
@@ -81,3 +83,45 @@ async def test_searches_run_concurrently():
     await Engine(source).search_many([_search(d) for d in ["ZRH", "LHR", "CDG", "FRA", "MAD"]])
 
     assert source.max_in_flight == 5
+
+
+async def test_never_exceeds_max_concurrency():
+    source = FakeSource()
+
+    await Engine(source, max_concurrency=5).search_many([_search("ZRH")] * 50)
+
+    assert len(source.calls) == 50
+    assert source.max_in_flight == 5
+
+
+async def test_parallel_calls_share_the_limit():
+    source = FakeSource()
+    engine = Engine(source, max_concurrency=5)
+
+    await asyncio.gather(
+        engine.search_many([_search("ZRH")] * 20),
+        engine.search_many([_search("LHR")] * 20),
+    )
+
+    assert source.max_in_flight == 5
+
+
+async def test_failed_search_releases_its_slot():
+    class FailsOnce(FakeSource):
+        async def search(self, search: Search) -> list[PricedTrip]:
+            if search.destination == "BAD":
+                raise RuntimeError("boom")
+            return await super().search(search)
+
+    engine = Engine(FailsOnce(), max_concurrency=1)
+    with pytest.raises(RuntimeError):
+        await engine.search_many([_search("BAD")])
+
+    trips = await asyncio.wait_for(engine.search_many([_search("ZRH")]), timeout=1)
+    assert len(trips) == 1
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_max_concurrency_must_be_positive(value):
+    with pytest.raises(ValueError, match="at least 1"):
+        Engine(FakeSource(), max_concurrency=value)
