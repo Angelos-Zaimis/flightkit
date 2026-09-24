@@ -1,1 +1,1 @@
-"""Exception hierarchy raised by flightkit."""
+"""Exceptions raised by flightkit."""

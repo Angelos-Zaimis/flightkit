@@ -1,1 +1,1 @@
-"""In-memory cache implementing the Cache port."""
+"""In-memory result cache."""

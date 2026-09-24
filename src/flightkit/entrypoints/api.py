@@ -1,1 +1,1 @@
-"""FastAPI wrapper (requires flightkit[api])."""
+"""FastAPI app. Requires the `api` extra."""

@@ -1,1 +1,1 @@
-"""MCP server exposing flightkit tools (requires flightkit[mcp])."""
+"""MCP server. Requires the `mcp` extra."""

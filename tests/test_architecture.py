@@ -1,5 +1,3 @@
-"""Guards the layering rules: core stays pure, the base install stays light."""
-
 import ast
 import importlib.util
 import pathlib
@@ -18,7 +16,6 @@ FORBIDDEN_IN_CORE = (
 
 
 def _imports(path: pathlib.Path) -> set[str]:
-    """Absolute names of everything a module imports, with relative imports resolved."""
     package = ["flightkit", "core", *path.relative_to(CORE).parent.parts]
     names: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text())):
@@ -27,7 +24,7 @@ def _imports(path: pathlib.Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom):
             base = package[: len(package) - node.level + 1] if node.level else []
             module = ".".join([*base, *filter(None, [node.module])])
-            # "from .. import adapters" names the subpackage in the alias, not the module
+            # `from .. import adapters` puts the submodule in the alias
             names.update(f"{module}.{a.name}" for a in node.names)
     return names
 

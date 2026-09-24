@@ -1,1 +1,1 @@
-"""Implementations of core ports that talk to external services."""
+"""Adapters for external fare providers."""
