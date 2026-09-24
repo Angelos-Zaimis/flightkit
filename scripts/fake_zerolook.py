@@ -4,6 +4,7 @@ Run with:
     uv run --with fastapi --with uvicorn python scripts/fake_zerolook.py
 """
 
+import asyncio
 from datetime import datetime, timezone
 
 import uvicorn
@@ -11,11 +12,14 @@ from fastapi import FastAPI, Request
 
 app = FastAPI(title="Fake Zerolook")
 
+LATENCY = 0.5
+
 
 @app.post("/v1/search")
 async def search(request: Request) -> dict:
     body = await request.json()
-    print("received:", body)
+    print("received:", body, flush=True)
+    await asyncio.sleep(LATENCY)
 
     now = datetime.now(timezone.utc).isoformat()
     return {
