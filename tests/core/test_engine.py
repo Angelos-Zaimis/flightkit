@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from flightkit.core.engine import Engine
-from flightkit.models import Price, PricedTrip, Search
+from flightkit.models import Price, PricedTrip, Search, SearchResult
 
 
 def _search(destination: str) -> Search:
@@ -44,12 +44,28 @@ class FakeSource:
             self.in_flight -= 1
 
 
+class FailsFor(FakeSource):
+    """Raises for the given destinations, succeeds for the rest."""
+
+    def __init__(self, *bad: str, error: Exception | None = None) -> None:
+        super().__init__()
+        self.bad = set(bad)
+        self.error = error or TimeoutError("zerolook too slow")
+
+    async def search(self, search: Search) -> list[PricedTrip]:
+        if search.destination in self.bad:
+            self.calls.append(search)
+            raise self.error
+        return await super().search(search)
+
+
 async def test_returns_trips_from_every_search_in_order():
     searches = [_search(d) for d in ["ZRH", "LHR", "CDG"]]
 
-    trips = await Engine(FakeSource()).search_many(searches)
+    result = await Engine(FakeSource()).search_many(searches)
 
-    assert [t.search.destination for t in trips] == ["ZRH", "LHR", "CDG"]
+    assert [t.search.destination for t in result.trips] == ["ZRH", "LHR", "CDG"]
+    assert result.failures == ()
 
 
 async def test_flattens_multiple_trips_per_search():
@@ -57,14 +73,14 @@ async def test_flattens_multiple_trips_per_search():
         async def search(self, search: Search) -> list[PricedTrip]:
             return [_trip(search, "LX"), _trip(search, "A3")]
 
-    trips = await Engine(TwoTrips()).search_many([_search("ZRH"), _search("LHR")])
+    result = await Engine(TwoTrips()).search_many([_search("ZRH"), _search("LHR")])
 
-    assert [t.carrier for t in trips] == ["LX", "A3", "LX", "A3"]
+    assert [t.carrier for t in result.trips] == ["LX", "A3", "LX", "A3"]
 
 
 async def test_no_searches_makes_no_calls():
     source = FakeSource()
-    assert await Engine(source).search_many([]) == []
+    assert await Engine(source).search_many([]) == SearchResult()
     assert source.calls == []
 
 
@@ -106,19 +122,62 @@ async def test_parallel_calls_share_the_limit():
     assert source.max_in_flight == 5
 
 
+async def test_one_failure_keeps_the_other_results():
+    searches = [_search(d) for d in ["ZRH", "BAD", "LHR"]]
+
+    result = await Engine(FailsFor("BAD")).search_many(searches)
+
+    assert [t.search.destination for t in result.trips] == ["ZRH", "LHR"]
+    assert len(result.failures) == 1
+    assert result.failures[0].search == _search("BAD")
+    assert result.failures[0].error == "TimeoutError: zerolook too slow"
+
+
+async def test_all_failing_returns_only_failures():
+    searches = [_search(d) for d in ["ZRH", "LHR"]]
+
+    result = await Engine(FailsFor("ZRH", "LHR")).search_many(searches)
+
+    assert result.trips == ()
+    assert [f.search.destination for f in result.failures] == ["ZRH", "LHR"]
+
+
+async def test_failure_keeps_the_error_type():
+    source = FailsFor("ZRH", error=ValueError("bad payload"))
+
+    result = await Engine(source).search_many([_search("ZRH")])
+
+    assert result.failures[0].error == "ValueError: bad payload"
+
+
 async def test_failed_search_releases_its_slot():
-    class FailsOnce(FakeSource):
+    engine = Engine(FailsFor("BAD"), max_concurrency=1)
+
+    first = await engine.search_many([_search("BAD")])
+    second = await asyncio.wait_for(engine.search_many([_search("ZRH")]), timeout=1)
+
+    assert len(first.failures) == 1
+    assert len(second.trips) == 1
+
+
+async def test_cancelling_stops_the_search_instead_of_reporting_a_failure():
+    class Hangs(FakeSource):
         async def search(self, search: Search) -> list[PricedTrip]:
-            if search.destination == "BAD":
-                raise RuntimeError("boom")
-            return await super().search(search)
+            await asyncio.sleep(10)
+            return []
 
-    engine = Engine(FailsOnce(), max_concurrency=1)
-    with pytest.raises(RuntimeError):
-        await engine.search_many([_search("BAD")])
+    task = asyncio.create_task(Engine(Hangs()).search_many([_search("ZRH")]))
+    await asyncio.sleep(0.01)
+    task.cancel()
 
-    trips = await asyncio.wait_for(engine.search_many([_search("ZRH")]), timeout=1)
-    assert len(trips) == 1
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_result_serializes_to_json():
+    result = await Engine(FailsFor("BAD")).search_many([_search("ZRH"), _search("BAD")])
+
+    assert SearchResult.model_validate_json(result.model_dump_json()) == result
 
 
 @pytest.mark.parametrize("value", [0, -1])

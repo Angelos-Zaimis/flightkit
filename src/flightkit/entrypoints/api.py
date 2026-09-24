@@ -12,7 +12,7 @@ from fastapi import FastAPI
 
 from flightkit.adapters.zerolook import ZerolookClient
 from flightkit.core.engine import Engine
-from flightkit.models import PricedTrip, Search
+from flightkit.models import Search, SearchResult
 
 
 @asynccontextmanager
@@ -29,6 +29,6 @@ app = FastAPI(title="Flightkit", lifespan=lifespan)
 
 
 @app.post("/search")
-async def search(searches: list[Search]) -> list[PricedTrip]:
+async def search(searches: list[Search]) -> SearchResult:
     engine: Engine = app.state.engine
     return await engine.search_many(searches)
