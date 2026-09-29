@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from flightkit.core.cache import MemoryCache
 from flightkit.core.engine import Engine
 from flightkit.models import Price, PricedTrip, Search, SearchResult
 
@@ -184,3 +185,65 @@ async def test_result_serializes_to_json():
 def test_max_concurrency_must_be_positive(value):
     with pytest.raises(ValueError, match="at least 1"):
         Engine(FakeSource(), max_concurrency=value)
+
+
+async def test_cache_hit_skips_the_source():
+    source = FakeSource()
+    engine = Engine(source, cache=MemoryCache())
+
+    first = await engine.search_many([_search("ZRH")])
+    second = await engine.search_many([_search("ZRH")])
+
+    assert len(source.calls) == 1
+    assert second == first
+
+
+async def test_cache_miss_calls_the_source_and_stores_the_result():
+    source = FakeSource()
+    cache = MemoryCache()
+
+    await Engine(source, cache=cache).search_many([_search("ZRH")])
+
+    assert len(source.calls) == 1
+    assert await cache.get(_search("ZRH")) is not None
+
+
+async def test_failures_are_not_cached():
+    source = FailsFor("BAD")
+    engine = Engine(source, cache=MemoryCache())
+
+    await engine.search_many([_search("BAD")])
+    await engine.search_many([_search("BAD")])
+
+    assert len(source.calls) == 2
+
+
+async def test_cache_hits_do_not_take_a_slot():
+    class Blocks(FakeSource):
+        async def search(self, search: Search) -> list[PricedTrip]:
+            self.calls.append(search)
+            await asyncio.Event().wait()  # never finishes
+            return []
+
+    cache = MemoryCache()
+    await cache.set(_search("ZRH"), [])
+    engine = Engine(Blocks(), max_concurrency=1, cache=cache)
+
+    blocker = asyncio.create_task(engine.search_many([_search("LHR")]))
+    await asyncio.sleep(0.01)  # LHR now holds the only slot
+
+    result = await asyncio.wait_for(engine.search_many([_search("ZRH")]), timeout=1)
+
+    assert result.failures == ()
+    blocker.cancel()
+
+
+async def test_mixed_hits_and_misses():
+    source = FakeSource()
+    cache = MemoryCache()
+    await Engine(source, cache=cache).search_many([_search("ZRH")])
+
+    result = await Engine(source, cache=cache).search_many([_search("ZRH"), _search("LHR")])
+
+    assert [t.search.destination for t in result.trips] == ["ZRH", "LHR"]
+    assert [s.destination for s in source.calls] == ["ZRH", "LHR"]
