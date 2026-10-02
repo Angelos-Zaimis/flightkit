@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from flightkit.models import FlightkitModel, Price, PricedTrip, Search
+from flightkit.models import FlightkitModel, Price, PricedTrip, Search, TripQuery
 
 
 class _Sample(FlightkitModel):
@@ -250,3 +250,103 @@ class TestPricedTrip:
         utc = _trip(fetched_at="2026-09-23T10:00:00Z")
         athens = _trip(fetched_at="2026-09-23T13:00:00+03:00")
         assert utc == athens
+
+
+QUERY = {
+    "origin": "ZRH",
+    "destinations": ["ATH", "HER"],
+    "depart_from": "2027-06-01",
+    "depart_to": "2027-06-14",
+}
+
+
+def _query(**overrides):
+    return TripQuery(**{**QUERY, **overrides})
+
+
+class TestTripQuery:
+    def test_minimal_query_is_one_way_with_defaults(self):
+        q = _query()
+        assert q.origin == "ZRH"
+        assert q.destinations == ("ATH", "HER")
+        assert q.min_nights is None and q.max_nights is None
+        assert q.passengers == 1
+        assert q.cabin == "economy"
+
+    def test_codes_are_normalized(self):
+        q = _query(origin=" zrh", destinations=["ath", "Her "])
+        assert q.origin == "ZRH"
+        assert q.destinations == ("ATH", "HER")
+
+    def test_dates_are_parsed(self):
+        q = _query()
+        assert q.depart_from == date(2027, 6, 1)
+        assert q.depart_to == date(2027, 6, 14)
+
+    def test_nights_range(self):
+        q = _query(min_nights=6, max_nights=8)
+        assert (q.min_nights, q.max_nights) == (6, 8)
+
+    def test_same_min_and_max_nights_is_allowed(self):
+        assert _query(min_nights=7, max_nights=7).min_nights == 7
+
+    def test_single_day_window_is_allowed(self):
+        assert _query(depart_to="2027-06-01").depart_to == date(2027, 6, 1)
+
+    def test_window_of_exactly_max_days_is_allowed(self):
+        assert _query(depart_to="2027-07-30").depart_to == date(2027, 7, 30)  # 60 days
+
+    def test_window_one_day_over_max_is_rejected(self):
+        with pytest.raises(ValidationError, match="at most 60 days"):
+            _query(depart_to="2027-07-31")  # 61 days
+
+    def test_reversed_window_is_rejected(self):
+        with pytest.raises(ValidationError, match="depart_to must be on or after"):
+            _query(depart_to="2027-05-31")
+
+    @pytest.mark.parametrize("origin", ["ATH", "ath", " ATH "])
+    def test_origin_in_destinations_is_rejected(self, origin):
+        with pytest.raises(ValidationError, match="origin must not be one of the destinations"):
+            _query(origin=origin)
+
+    def test_duplicate_destinations_are_rejected(self):
+        with pytest.raises(ValidationError, match="duplicates"):
+            _query(destinations=["ATH", "ath"])
+
+    def test_empty_destinations_rejected(self):
+        with pytest.raises(ValidationError):
+            _query(destinations=[])
+
+    def test_twenty_destinations_allowed_but_not_more(self):
+        codes = [f"A{chr(65 + i // 26)}{chr(65 + i % 26)}" for i in range(21)]
+        assert len(_query(destinations=codes[:20]).destinations) == 20
+        with pytest.raises(ValidationError):
+            _query(destinations=codes)
+
+    @pytest.mark.parametrize("nights", [{"min_nights": 5}, {"max_nights": 5}])
+    def test_only_one_nights_field_is_rejected(self, nights):
+        with pytest.raises(ValidationError, match="both min_nights and max_nights"):
+            _query(**nights)
+
+    def test_min_nights_above_max_nights_is_rejected(self):
+        with pytest.raises(ValidationError, match="min_nights must not be greater than max_nights"):
+            _query(min_nights=9, max_nights=6)
+
+    @pytest.mark.parametrize("value", [0, 31])
+    def test_nights_out_of_range_rejected(self, value):
+        with pytest.raises(ValidationError):
+            _query(min_nights=value, max_nights=value)
+
+    def test_unknown_field_is_rejected(self):
+        with pytest.raises(ValidationError, match="Extra inputs"):
+            _query(destination="ATH")
+
+    def test_is_frozen_and_hashable(self):
+        q = _query()
+        with pytest.raises(ValidationError, match="frozen"):
+            q.origin = "BSL"
+        assert {q: "cached"}[_query()] == "cached"
+
+    def test_schema_has_descriptions_for_agents(self):
+        properties = TripQuery.model_json_schema()["properties"]
+        assert all(p.get("description") for p in properties.values())

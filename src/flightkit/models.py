@@ -22,6 +22,7 @@ CurrencyCode = Annotated[
 AirlineCode = Annotated[
     str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9]{2}$", to_upper=True)
 ]
+MAX_DATE_RANGE_DAYS = 60
 
 
 class FlightkitModel(BaseModel):
@@ -46,6 +47,49 @@ class Search(FlightkitModel):
             raise ValueError("origin and destination must differ")
         if self.return_date and self.return_date < self.depart_date:
             raise ValueError("return_date must be on or after depart_date")
+        return self
+
+
+class TripQuery(FlightkitModel):
+    """A flexible trip search that expands into many concrete searches."""
+
+    origin: IataCode = Field(description="Departure airport as an IATA code, e.g. ZRH.")
+    destinations: tuple[IataCode, ...] = Field(
+        min_length=1,
+        max_length=20,
+        description="Candidate destination airports as IATA codes, e.g. ATH, HER.",
+    )
+    depart_from: date = Field(description="Earliest departure date.")
+    depart_to: date = Field(description="Latest departure date, inclusive")
+    min_nights: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description="Shortest stay in nights. Leave both night fields empty for one-way",
+    )
+    max_nights: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description="Longest stay in nights. Leave both night fields empty for one-way",
+    )
+    passengers: int = Field(default=1, ge=1, le=9, description="Number of travellers.")
+    cabin: Cabin = Field(default="economy", description="Cabin class.")
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.depart_to < self.depart_from:
+            raise ValueError("depart_to must be on or after depart_from")
+        if (self.depart_to - self.depart_from).days + 1 > MAX_DATE_RANGE_DAYS:
+            raise ValueError(f"date range must be at most {MAX_DATE_RANGE_DAYS} days")
+        if self.origin in self.destinations:
+            raise ValueError("origin must not be one of the destinations")
+        if len(set(self.destinations)) != len(self.destinations):
+            raise ValueError("destinations must not contain duplicates")
+        if (self.min_nights is None) != (self.max_nights is None):
+            raise ValueError("set both min_nights and max_nights, or neither")
+        if self.min_nights and self.max_nights and self.min_nights > self.max_nights:
+            raise ValueError("min_nights must not be greater than max_nights")
         return self
 
 
