@@ -37,6 +37,3 @@ uv build                 # sdist + wheel into dist/
 ```
 
 Pre-commit hooks: `uv run pre-commit install` once per clone.
-
-Note: `tests/test_architecture.py::test_base_install_has_no_optional_deps` fails by design when
-extras are installed — run `uv sync` (no extras) to get back to the base environment.
