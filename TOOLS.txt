@@ -80,8 +80,9 @@ GitHub Actions (.github/workflows/ci.yml)
   test-extras   — all extras installed: mypy + pytest over the entrypoints.
   audit-and-build — pip-audit + uv build (catches packaging mistakes).
 
-Dependabot
-  Weekly PRs for uv dependencies and GitHub Actions.
+Dependency updates
+  Done by hand: `uv lock --upgrade-package <name>` for Python packages, and the
+  version tags in ci.yml for GitHub Actions. pip-audit in CI flags known CVEs.
 
 === NOTES ===
 
