@@ -59,9 +59,18 @@ async def test_trips_returns_results(client, source):
 
     assert response.status_code == 200
     body = response.json()
-    assert len(body["trips"]) == 6
+    eur = body["currencies"]["EUR"]
+    assert len(eur["trips"]) == 6
+    assert set(eur["cheapest_by_destination"]) == {"ATH", "HER"}
+    assert list(eur["calendar"]) == ["2027-06-01", "2027-06-02", "2027-06-03"]
     assert body["failures"] == []
-    assert body["trips"][0]["search"]["return_date"] == "2027-06-08"
+    assert body["stats"] == {
+        "searches": 6,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "calls": 6,
+        "failures": 0,
+    }
     assert len(source.calls) == 6
 
 

@@ -4,10 +4,18 @@ from datetime import date, datetime, timezone
 import pytest
 
 from flightkit.core.cache import MemoryCache
-from flightkit.core.engine import Engine
+from flightkit.core.engine import Engine, _Counter
 from flightkit.core.expand import count_searches, expand
 from flightkit.errors import TooManySearchesError
-from flightkit.models import Price, PricedTrip, Search, SearchResult, TripQuery
+from flightkit.models import (
+    Price,
+    PricedTrip,
+    Search,
+    SearchResult,
+    SearchStats,
+    TripQuery,
+    TripResult,
+)
 
 
 def _search(destination: str, day: int = 1) -> Search:
@@ -202,7 +210,7 @@ async def test_cache_hit_skips_the_source():
     second = await engine.search_many([_search("ZRH")])
 
     assert len(source.calls) == 1
-    assert second == first
+    assert second.trips == first.trips
 
 
 async def test_cache_miss_calls_the_source_and_stores_the_result():
@@ -322,9 +330,10 @@ async def test_cancelling_one_caller_does_not_cancel_the_others():
 
 async def test_each_caller_gets_its_own_list():
     engine = Engine(FakeSource())
+    counter = _Counter()
 
     a, b = await asyncio.gather(
-        engine._search_one(_search("ZRH")), engine._search_one(_search("ZRH"))
+        engine._search_one(_search("ZRH"), counter), engine._search_one(_search("ZRH"), counter)
     )
 
     assert a == b
@@ -359,7 +368,7 @@ async def test_search_trips_searches_every_expanded_search():
     result = await Engine(source).search_trips(query)
 
     assert source.calls == expand(query)
-    assert len(result.trips) == count_searches(query) == 12
+    assert len(result.currencies["EUR"].trips) == count_searches(query) == 12
 
 
 async def test_search_trips_too_big_raises_before_any_call():
@@ -386,7 +395,7 @@ async def test_search_trips_keeps_partial_results():
 
     result = await Engine(source).search_trips(_trip_query())
 
-    assert {t.search.destination for t in result.trips} == {"ATH"}
+    assert set(result.currencies["EUR"].cheapest_by_destination) == {"ATH"}
     assert len(result.failures) == 3
 
 
@@ -394,3 +403,49 @@ async def test_search_trips_keeps_partial_results():
 def test_max_searches_must_be_positive(value):
     with pytest.raises(ValueError, match="max_searches"):
         Engine(FakeSource(), max_searches=value)
+
+
+async def test_stats_count_calls_and_failures():
+    result = await Engine(FailsFor("BAD")).search_many(
+        [_search("ZRH"), _search("LHR"), _search("BAD")]
+    )
+
+    assert result.stats == SearchStats(searches=3, calls=3, failures=1)
+
+
+async def test_stats_count_cache_hits():
+    source = FakeSource()
+    engine = Engine(source, cache=MemoryCache())
+    await engine.search_many([_search("ZRH")])
+
+    result = await engine.search_many([_search("ZRH"), _search("LHR")])
+
+    assert result.stats == SearchStats(searches=2, cache_hits=1, calls=1)
+
+
+async def test_stats_count_coalesced_duplicates():
+    result = await Engine(FakeSource()).search_many([_search("ZRH")] * 4)
+
+    assert result.stats == SearchStats(searches=4, calls=1, coalesced=3)
+
+
+async def test_stats_are_per_request_not_shared():
+    engine = Engine(FakeSource(delay=0.05))
+
+    first, second = await asyncio.gather(
+        engine.search_many([_search("ZRH"), _search("LHR")]),
+        engine.search_many([_search("ZRH")]),
+    )
+
+    assert first.stats.searches == 2
+    assert second.stats.searches == 1
+    assert first.stats.calls + second.stats.calls == 2  # ZRH started once, shared
+    assert first.stats.coalesced + second.stats.coalesced == 1
+
+
+async def test_search_trips_returns_ranked_result_with_stats():
+    result = await Engine(FakeSource()).search_trips(_trip_query())
+
+    assert isinstance(result, TripResult)
+    assert result.stats == SearchStats(searches=6, calls=6)
+    assert list(result.currencies["EUR"].cheapest_by_destination) == ["ATH", "HER"]
