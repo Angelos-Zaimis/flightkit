@@ -5,7 +5,7 @@ description = "Orchestration SDK over flight-price APIs: fan-out, caching, confi
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "Angelos Zaimis", email = "angelos.zaimis.dev@gmail.com" }]
+authors = [{ name = "Angelos Zaimis", email = "182300626+Angelos-Zaimis@users.noreply.github.com" }]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Framework :: AsyncIO",
