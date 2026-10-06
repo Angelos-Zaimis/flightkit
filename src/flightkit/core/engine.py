@@ -27,6 +27,8 @@ class _Counter:
 
 
 class Engine:
+    """Runs searches against a fare source with caching, coalescing, and a concurrency limit."""
+
     def __init__(
         self,
         source: FareSource,
@@ -46,6 +48,7 @@ class Engine:
         self._in_flight: dict[Search, asyncio.Task[list[PricedTrip]]] = {}
 
     async def search_many(self, searches: list[Search]) -> SearchResult:
+        """Run all searches concurrently. Failed searches are reported, not raised."""
         counter = _Counter()
         results = await asyncio.gather(
             *(self._search_one(s, counter) for s in searches), return_exceptions=True
@@ -105,4 +108,4 @@ class Engine:
         if self._in_flight.get(search) is task:
             del self._in_flight[search]
         if not task.cancelled():
-            task.exception()
+            task.exception()  # mark as seen, in case every caller was cancelled
