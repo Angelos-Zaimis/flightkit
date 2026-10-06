@@ -9,7 +9,16 @@ from typing_extensions import Self
 
 from flightkit.adapters.zerolook.mapping import to_priced_trip, to_search_request
 from flightkit.adapters.zerolook.wire import ZerolookTrip
+from flightkit.errors import (
+    AuthenticationError,
+    InvalidResponseError,
+    ProviderStatusError,
+    ProviderUnavailableError,
+    RateLimitedError,
+)
 from flightkit.models import PricedTrip, Search
+
+PROVIDER = "zerolook"
 
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_DELAY = 10.0
@@ -41,10 +50,15 @@ class ZerolookClient:
         """Search Zerolook for trips matching `search`."""
         payload = to_search_request(search).model_dump(mode="json", exclude_none=True)
         response = await self._post("/v1/search", payload)
-        return [
-            to_priced_trip(ZerolookTrip.model_validate(item), search)
-            for item in response.json()["trips"]
-        ]
+        try:
+            return [
+                to_priced_trip(ZerolookTrip.model_validate(item), search)
+                for item in response.json()["trips"]
+            ]
+        except (ValueError, KeyError, TypeError) as e:
+            raise InvalidResponseError(
+                f"unexpected response from Zerolook: {e}", provider=PROVIDER
+            ) from e
 
     async def _post(self, path: str, payload: dict[str, Any]) -> httpx.Response:
         attempt = 0
@@ -52,12 +66,15 @@ class ZerolookClient:
             retry_after: float | None = None
             try:
                 response = await self._http.post(path, json=payload)
-            except httpx.TransportError:
+            except httpx.TransportError as e:
                 if attempt >= self._max_retries:
-                    raise
+                    raise ProviderUnavailableError(
+                        f"could not reach Zerolook: {e}", provider=PROVIDER
+                    ) from e
             else:
                 if response.status_code not in RETRYABLE_STATUS or attempt >= self._max_retries:
-                    response.raise_for_status()
+                    if response.is_error:
+                        raise _status_error(response)
                     return response
                 retry_after = _retry_after_seconds(response)
             await asyncio.sleep(self._delay(attempt, retry_after))
@@ -77,6 +94,21 @@ class ZerolookClient:
 
     async def __aexit__(self, *exc_info: object) -> None:
         await self.aclose()
+
+
+def _status_error(response: httpx.Response) -> ProviderStatusError:
+    status = response.status_code
+    message = f"Zerolook returned HTTP {status}"
+    if status in (401, 403):
+        return AuthenticationError(message, provider=PROVIDER, status_code=status)
+    if status == 429:
+        return RateLimitedError(
+            message,
+            provider=PROVIDER,
+            status_code=status,
+            retry_after=_retry_after_seconds(response),
+        )
+    return ProviderStatusError(message, provider=PROVIDER, status_code=status)
 
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:

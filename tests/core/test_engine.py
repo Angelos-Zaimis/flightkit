@@ -6,7 +6,14 @@ import pytest
 from flightkit.core.cache import MemoryCache
 from flightkit.core.engine import Engine, _Counter
 from flightkit.core.expand import count_searches, expand
-from flightkit.errors import TooManySearchesError
+from flightkit.errors import (
+    AuthenticationError,
+    InvalidResponseError,
+    ProviderStatusError,
+    ProviderUnavailableError,
+    RateLimitedError,
+    TooManySearchesError,
+)
 from flightkit.models import (
     Price,
     PricedTrip,
@@ -449,3 +456,21 @@ async def test_search_trips_returns_ranked_result_with_stats():
     assert isinstance(result, TripResult)
     assert result.stats == SearchStats(searches=6, calls=6)
     assert list(result.currencies["EUR"].cheapest_by_destination) == ["ATH", "HER"]
+
+
+@pytest.mark.parametrize(
+    ("error", "retryable"),
+    [
+        (ProviderUnavailableError("down", provider="test"), True),
+        (RateLimitedError("slow down", provider="test", status_code=429, retry_after=None), True),
+        (ProviderStatusError("oops", provider="test", status_code=503), True),
+        (AuthenticationError("bad key", provider="test", status_code=401), False),
+        (InvalidResponseError("garbage", provider="test"), False),
+        (RuntimeError("bug in a custom source"), False),
+    ],
+)
+async def test_failure_says_whether_retrying_may_help(error, retryable):
+    result = await Engine(FailsFor("ZRH", error=error)).search_many([_search("ZRH")])
+
+    assert result.failures[0].retryable is retryable
+    assert result.failures[0].error.startswith(type(error).__name__)

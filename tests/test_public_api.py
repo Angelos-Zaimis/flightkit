@@ -5,14 +5,20 @@ import sys
 import flightkit
 
 EXPECTED = {
+    "AuthenticationError",
     "Cache",
     "CurrencyResult",
     "Engine",
     "FareSource",
     "FlightkitError",
+    "InvalidResponseError",
     "MemoryCache",
     "Price",
     "PricedTrip",
+    "ProviderError",
+    "ProviderStatusError",
+    "ProviderUnavailableError",
+    "RateLimitedError",
     "Search",
     "SearchFailure",
     "SearchResult",

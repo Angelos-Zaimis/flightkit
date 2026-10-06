@@ -9,6 +9,15 @@ import respx
 
 from flightkit.adapters.zerolook import ZerolookClient
 from flightkit.adapters.zerolook.client import MAX_DELAY, _retry_after_seconds
+from flightkit.errors import (
+    AuthenticationError,
+    FlightkitError,
+    InvalidResponseError,
+    ProviderError,
+    ProviderStatusError,
+    ProviderUnavailableError,
+    RateLimitedError,
+)
 from flightkit.models import PricedTrip, Search
 
 BASE_URL = "https://zerolook.test"
@@ -68,17 +77,39 @@ async def test_sends_payload_and_auth_header(client, zerolook):
     }
 
 
-@pytest.mark.parametrize("status", [400, 401, 429, 500, 503])
-async def test_error_status_raises(client, zerolook, status):
+@pytest.mark.parametrize(
+    ("status", "error", "retryable"),
+    [
+        (400, ProviderStatusError, False),
+        (401, AuthenticationError, False),
+        (403, AuthenticationError, False),
+        (404, ProviderStatusError, False),
+        (429, RateLimitedError, True),
+        (500, ProviderStatusError, True),
+        (503, ProviderStatusError, True),
+    ],
+)
+async def test_error_status_becomes_a_flightkit_error(client, zerolook, status, error, retryable):
     zerolook.post("/v1/search").respond(status_code=status)
-    with pytest.raises(httpx.HTTPStatusError):
+
+    with pytest.raises(error) as exc:
         await client.search(SEARCH)
 
+    assert type(exc.value) is error
+    assert exc.value.status_code == status
+    assert exc.value.retryable is retryable
+    assert exc.value.provider == "zerolook"
+    assert str(exc.value) == f"Zerolook returned HTTP {status}"
 
-async def test_timeout_raises(client, zerolook):
+
+async def test_timeout_becomes_provider_unavailable(client, zerolook):
     zerolook.post("/v1/search").mock(side_effect=httpx.ReadTimeout("slow"))
-    with pytest.raises(httpx.TimeoutException):
+
+    with pytest.raises(ProviderUnavailableError) as exc:
         await client.search(SEARCH)
+
+    assert exc.value.retryable is True
+    assert isinstance(exc.value.__cause__, httpx.ReadTimeout)
 
 
 async def test_concurrent_searches_share_one_client(client, zerolook):
@@ -115,7 +146,7 @@ async def test_retries_then_succeeds(client, zerolook):
 async def test_retryable_status_gives_up_after_max_retries(client, zerolook, status):
     route = zerolook.post("/v1/search").respond(status_code=status)
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ProviderStatusError):
         await client.search(SEARCH)
 
     assert route.call_count == 3
@@ -125,7 +156,7 @@ async def test_retryable_status_gives_up_after_max_retries(client, zerolook, sta
 async def test_client_errors_are_not_retried(client, zerolook, status):
     route = zerolook.post("/v1/search").respond(status_code=status)
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ProviderStatusError):
         await client.search(SEARCH)
 
     assert route.call_count == 1
@@ -134,7 +165,7 @@ async def test_client_errors_are_not_retried(client, zerolook, status):
 async def test_network_errors_give_up_after_max_retries(client, zerolook):
     route = zerolook.post("/v1/search").mock(side_effect=httpx.ConnectError("refused"))
 
-    with pytest.raises(httpx.ConnectError):
+    with pytest.raises(ProviderUnavailableError):
         await client.search(SEARCH)
 
     assert route.call_count == 3
@@ -145,7 +176,7 @@ async def test_max_retries_controls_attempts(zerolook, max_retries):
     route = zerolook.post("/v1/search").respond(status_code=503)
 
     async with ZerolookClient(BASE_URL, "k", max_retries=max_retries, backoff=0) as c:
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(ProviderStatusError):
             await c.search(SEARCH)
 
     assert route.call_count == max_retries + 1
@@ -195,3 +226,52 @@ async def test_backoff_grows_but_stays_capped(attempt):
 )
 def test_retry_after_parsing(headers, expected):
     assert _retry_after_seconds(httpx.Response(429, headers=headers)) == expected
+
+
+async def test_rate_limit_keeps_retry_after(client, zerolook):
+    zerolook.post("/v1/search").respond(429, headers={"Retry-After": "0"})
+
+    with pytest.raises(RateLimitedError) as exc:
+        await client.search(SEARCH)
+
+    assert exc.value.retry_after == 0.0
+
+
+@pytest.mark.parametrize(
+    ("response", "cause"),
+    [
+        (httpx.Response(200, content=b"<html>maintenance</html>"), ValueError),
+        (httpx.Response(200, json={"results": []}), KeyError),
+        (httpx.Response(200, json=[TRIP]), TypeError),
+        (httpx.Response(200, json={"trips": [{**TRIP, "fareAmt": "free"}]}), ValueError),
+        (httpx.Response(200, json={"trips": [{**TRIP, "conf": 1.5}]}), ValueError),
+    ],
+    ids=["not-json", "missing-trips", "wrong-shape", "bad-field", "breaks-domain-rule"],
+)
+async def test_unexpected_response_becomes_invalid_response(client, zerolook, response, cause):
+    zerolook.post("/v1/search").mock(return_value=response)
+
+    with pytest.raises(InvalidResponseError) as exc:
+        await client.search(SEARCH)
+
+    assert exc.value.retryable is False
+    assert isinstance(exc.value.__cause__, cause)
+
+
+async def test_every_provider_failure_is_a_flightkit_error(client, zerolook):
+    for side_effect in [httpx.ConnectError("x"), httpx.Response(401), httpx.Response(200, json={})]:
+        zerolook.post("/v1/search").mock(side_effect=[side_effect] * 3)
+        with pytest.raises(ProviderError) as exc:
+            await client.search(SEARCH)
+        assert isinstance(exc.value, FlightkitError)
+
+
+async def test_no_httpx_error_escapes(client, zerolook):
+    for side_effect in [httpx.ConnectError("x"), httpx.ReadTimeout("x"), httpx.Response(500)]:
+        zerolook.post("/v1/search").mock(side_effect=[side_effect] * 3)
+        try:
+            await client.search(SEARCH)
+        except httpx.HTTPError:
+            pytest.fail(f"httpx error escaped for {side_effect!r}")
+        except FlightkitError:
+            pass

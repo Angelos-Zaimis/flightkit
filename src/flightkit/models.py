@@ -120,6 +120,9 @@ class SearchFailure(FlightkitModel):
 
     search: Search
     error: str
+    retryable: bool = Field(
+        default=False, description="Whether trying the same search again later may succeed."
+    )
 
 
 class SearchStats(FlightkitModel):
