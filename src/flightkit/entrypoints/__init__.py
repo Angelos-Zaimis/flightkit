@@ -1,1 +1,1 @@
-"""Optional doors into core. Never imported by flightkit/__init__."""
+"""Optional FastAPI and MCP entrypoints."""

@@ -1,1 +1,1 @@
-"""Fan-out orchestration and confidence-based fallback."""
+"""Search engine: fan-out and fallback."""

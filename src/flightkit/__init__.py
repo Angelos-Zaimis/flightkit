@@ -1,1 +1,1 @@
-"""Public API surface of flightkit."""
+"""Flightkit: flight search orchestration over price APIs."""

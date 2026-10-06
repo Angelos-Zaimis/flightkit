@@ -1,1 +1,1 @@
-"""Expand one search request into many concrete searches."""
+"""Expand a search into concrete searches."""
