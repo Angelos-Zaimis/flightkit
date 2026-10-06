@@ -36,12 +36,16 @@ class ZerolookClient:
         timeout: float = 10.0,
         max_retries: int = 2,
         backoff: float = 0.5,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        # `transport` swaps out the network layer, e.g. for a proxy or the in-memory
+        # FakeZerolook. Without it, httpx uses a normal pooled connection.
         self._http = httpx.AsyncClient(
             base_url=base_url,
             headers={"Authorization": f"Bearer {api_key}"},
             limits=httpx.Limits(max_connections=max_connections),
             timeout=timeout,
+            transport=transport,
         )
         self._max_retries = max_retries
         self._backoff = backoff

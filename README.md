@@ -105,10 +105,44 @@ uv sync --extra api      # add the FastAPI app
 The library itself depends only on `httpx` and `pydantic`. The HTTP API (`api`) and the MCP
 server (`mcp`, in progress) are optional extras.
 
+## Try it without an API key
+
+```bash
+uv run examples/demo.py
+```
+
+The demo runs the real client and engine against a simulated Zerolook API that lives in memory,
+with realistic prices and the occasional 429 or 503 thrown in. It walks through a flexible
+search, a repeat served from the cache, 20 concurrent callers asking the same thing, and a query
+that's too big. Abridged output:
+
+```
+1. Flexible search
+   ZRH → ATH, HER, JTR · Jun 1–14 · 6–8 nights
+   126 searches in 1.5s · 126 provider calls · 13 temporary errors retried · 0 failed
+
+   Cheapest per destination
+     HER  €  83.93   Tue Jun 08 → Jun 16   2 stops  conf 0.90
+     ATH  €  98.39   Tue Jun 01 → Jun 09   2 stops  conf 0.82
+     JTR  € 174.47   Tue Jun 08 → Jun 14   2 stops  conf 0.78
+
+2. The same search again
+   126 cache hits · 0 provider requests · 4 ms
+
+3. 20 agents ask at the same moment
+   20 × 126 = 2520 searches requested · 126 provider calls
+
+4. A query that's too big
+   refused: query expands to 1440 searches, limit is 500 · 0 provider requests
+```
+
+Add `--calm` to turn the simulated errors off.
+
 ## Quickstart
 
 ```python
 import asyncio
+from datetime import date
 
 from flightkit import Engine, MemoryCache, TripQuery, ZerolookClient
 
@@ -116,9 +150,9 @@ from flightkit import Engine, MemoryCache, TripQuery, ZerolookClient
 async def main() -> None:
     query = TripQuery(
         origin="ZRH",
-        destinations=["ATH", "HER"],
-        depart_from="2027-06-01",
-        depart_to="2027-06-14",
+        destinations=("ATH", "HER"),
+        depart_from=date(2027, 6, 1),
+        depart_to=date(2027, 6, 14),
         min_nights=6,
         max_nights=8,
     )
@@ -175,12 +209,27 @@ curl -X POST localhost:8001/trips -H 'content-type: application/json' -d '{
 Invalid input and queries that would exceed the search limit return `422` before any provider
 call is made.
 
-For local development without provider access, `scripts/fake_zerolook.py` serves canned
-responses with some latency:
+For local development without provider access, `scripts/fake_zerolook.py` serves the same
+simulated prices over HTTP on port 9000:
 
 ```bash
 uv run --with fastapi --with uvicorn python scripts/fake_zerolook.py
 ```
+
+## Testing your own code
+
+`FakeZerolook` plugs into the client as an httpx transport, so you can test code that uses
+flightkit without a network or an API key:
+
+```python
+from flightkit.adapters.zerolook import FakeZerolook, ZerolookClient
+
+fake = FakeZerolook(chaos=False)
+client = ZerolookClient("https://zerolook.test", "any-key", transport=fake.transport())
+```
+
+The same search always returns the same prices. With `chaos=True` some requests fail with 429 or
+503, which is useful for checking how your code handles partial results.
 
 ## Configuration
 
