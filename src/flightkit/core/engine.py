@@ -15,6 +15,7 @@ class Engine:
         self._source = source
         self._limit = asyncio.Semaphore(max_concurrency)
         self._cache = cache
+        self._in_flight: dict[Search, asyncio.Task[list[PricedTrip]]] = {}
 
     async def search_many(self, searches: list[Search]) -> SearchResult:
         results = await asyncio.gather(
@@ -40,9 +41,23 @@ class Engine:
             if cached is not None:
                 return cached
 
+        task = self._in_flight.get(search)
+        if task is None:
+            task = asyncio.create_task(self._fetch(search))
+            self._in_flight[search] = task
+            task.add_done_callback(lambda done: self._forget(search, done))
+        return list(await asyncio.shield(task))
+
+    async def _fetch(self, search: Search) -> list[PricedTrip]:
         async with self._limit:
             trips = await self._source.search(search)
 
         if self._cache is not None:
             await self._cache.set(search, trips)
         return trips
+
+    def _forget(self, search: Search, task: asyncio.Task[list[PricedTrip]]) -> None:
+        if self._in_flight.get(search) is task:
+            del self._in_flight[search]
+        if not task.cancelled():
+            task.exception()

@@ -8,8 +8,13 @@ from flightkit.core.engine import Engine
 from flightkit.models import Price, PricedTrip, Search, SearchResult
 
 
-def _search(destination: str) -> Search:
-    return Search(origin="ATH", destination=destination, depart_date=date(2026, 10, 1))
+def _search(destination: str, day: int = 1) -> Search:
+    return Search(origin="ATH", destination=destination, depart_date=date(2026, 10, day))
+
+
+def _distinct(n: int) -> list[Search]:
+    """n different searches, so coalescing doesn't merge them."""
+    return [_search("ZRH", day) for day in range(1, n + 1)]
 
 
 def _trip(search: Search, carrier: str = "LX") -> PricedTrip:
@@ -105,9 +110,9 @@ async def test_searches_run_concurrently():
 async def test_never_exceeds_max_concurrency():
     source = FakeSource()
 
-    await Engine(source, max_concurrency=5).search_many([_search("ZRH")] * 50)
+    await Engine(source, max_concurrency=5).search_many(_distinct(28) * 2)
 
-    assert len(source.calls) == 50
+    assert len(source.calls) == 28
     assert source.max_in_flight == 5
 
 
@@ -116,8 +121,8 @@ async def test_parallel_calls_share_the_limit():
     engine = Engine(source, max_concurrency=5)
 
     await asyncio.gather(
-        engine.search_many([_search("ZRH")] * 20),
-        engine.search_many([_search("LHR")] * 20),
+        engine.search_many(_distinct(20)),
+        engine.search_many([_search("LHR", day) for day in range(1, 21)]),
     )
 
     assert source.max_in_flight == 5
@@ -247,3 +252,88 @@ async def test_mixed_hits_and_misses():
 
     assert [t.search.destination for t in result.trips] == ["ZRH", "LHR"]
     assert [s.destination for s in source.calls] == ["ZRH", "LHR"]
+
+
+async def test_identical_searches_at_once_make_one_call():
+    source = FakeSource()
+    engine = Engine(source)
+
+    results = await asyncio.gather(*(engine.search_many([_search("ZRH")]) for _ in range(50)))
+
+    assert len(source.calls) == 1
+    assert all(len(r.trips) == 1 for r in results)
+
+
+async def test_duplicates_in_one_batch_make_one_call_each():
+    source = FakeSource()
+
+    result = await Engine(source).search_many([_search("ZRH")] * 3 + [_search("LHR")] * 3)
+
+    assert len(source.calls) == 2
+    assert [t.search.destination for t in result.trips] == ["ZRH"] * 3 + ["LHR"] * 3
+
+
+async def test_different_searches_are_not_merged():
+    source = FakeSource()
+
+    await Engine(source).search_many([_search("ZRH", 1), _search("ZRH", 2)])
+
+    assert len(source.calls) == 2
+
+
+async def test_shared_failure_reaches_every_waiter():
+    source = FailsFor("BAD")
+    engine = Engine(source)
+
+    results = await asyncio.gather(*(engine.search_many([_search("BAD")]) for _ in range(5)))
+
+    assert len(source.calls) == 1
+    assert all(len(r.failures) == 1 for r in results)
+
+
+async def test_new_search_after_finish_calls_again():
+    source = FailsFor("BAD")
+    engine = Engine(source)
+
+    await engine.search_many([_search("BAD")])
+    await engine.search_many([_search("BAD")])
+
+    assert len(source.calls) == 2
+    assert engine._in_flight == {}
+
+
+async def test_cancelling_one_caller_does_not_cancel_the_others():
+    source = FakeSource(delay=0.1)
+    engine = Engine(source)
+
+    first = asyncio.create_task(engine.search_many([_search("ZRH")]))
+    await asyncio.sleep(0.01)
+    second = asyncio.create_task(engine.search_many([_search("ZRH")]))
+    await asyncio.sleep(0.01)
+    first.cancel()
+
+    result = await second
+
+    assert len(result.trips) == 1
+    assert len(source.calls) == 1
+
+
+async def test_each_caller_gets_its_own_list():
+    engine = Engine(FakeSource())
+
+    a, b = await asyncio.gather(
+        engine._search_one(_search("ZRH")), engine._search_one(_search("ZRH"))
+    )
+
+    assert a == b
+    assert a is not b
+
+
+async def test_coalescing_and_cache_together():
+    source = FakeSource()
+    engine = Engine(source, cache=MemoryCache())
+
+    await asyncio.gather(*(engine.search_many([_search("ZRH")]) for _ in range(20)))
+    await engine.search_many([_search("ZRH")])
+
+    assert len(source.calls) == 1
