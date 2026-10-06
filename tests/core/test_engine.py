@@ -5,7 +5,9 @@ import pytest
 
 from flightkit.core.cache import MemoryCache
 from flightkit.core.engine import Engine
-from flightkit.models import Price, PricedTrip, Search, SearchResult
+from flightkit.core.expand import count_searches, expand
+from flightkit.errors import TooManySearchesError
+from flightkit.models import Price, PricedTrip, Search, SearchResult, TripQuery
 
 
 def _search(destination: str, day: int = 1) -> Search:
@@ -337,3 +339,58 @@ async def test_coalescing_and_cache_together():
     await engine.search_many([_search("ZRH")])
 
     assert len(source.calls) == 1
+
+
+def _trip_query(**overrides) -> TripQuery:
+    data = {
+        "origin": "ZRH",
+        "destinations": ["ATH", "HER"],
+        "depart_from": "2027-06-01",
+        "depart_to": "2027-06-03",
+        **overrides,
+    }
+    return TripQuery(**data)
+
+
+async def test_search_trips_searches_every_expanded_search():
+    source = FakeSource()
+    query = _trip_query(min_nights=6, max_nights=7)
+
+    result = await Engine(source).search_trips(query)
+
+    assert source.calls == expand(query)
+    assert len(result.trips) == count_searches(query) == 12
+
+
+async def test_search_trips_too_big_raises_before_any_call():
+    source = FakeSource()
+
+    with pytest.raises(TooManySearchesError):
+        await Engine(source, max_searches=5).search_trips(_trip_query())
+
+    assert source.calls == []
+
+
+async def test_search_trips_uses_the_cache():
+    source = FakeSource()
+    engine = Engine(source, cache=MemoryCache())
+
+    await engine.search_trips(_trip_query())
+    await engine.search_trips(_trip_query())
+
+    assert len(source.calls) == 6
+
+
+async def test_search_trips_keeps_partial_results():
+    source = FailsFor("HER")
+
+    result = await Engine(source).search_trips(_trip_query())
+
+    assert {t.search.destination for t in result.trips} == {"ATH"}
+    assert len(result.failures) == 3
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_max_searches_must_be_positive(value):
+    with pytest.raises(ValueError, match="max_searches"):
+        Engine(FakeSource(), max_searches=value)

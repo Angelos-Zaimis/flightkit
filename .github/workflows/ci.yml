@@ -58,9 +58,7 @@ jobs:
         run: uv run mypy
 
       - name: Run tests
-        run: >-
-          uv run pytest -v
-          --deselect tests/test_architecture.py::test_base_install_has_no_optional_deps
+        run: uv run pytest -v
 
   audit-and-build:
     runs-on: ubuntu-latest

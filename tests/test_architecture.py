@@ -1,6 +1,7 @@
 import ast
-import importlib.util
+import importlib.metadata
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -13,6 +14,7 @@ FORBIDDEN_IN_CORE = (
     "flightkit.adapters",
     "flightkit.entrypoints",
 )
+OPTIONAL_DEPS = {"fastapi", "uvicorn", "mcp"}
 
 
 def _imports(path: pathlib.Path) -> set[str]:
@@ -40,6 +42,9 @@ def test_importing_flightkit_does_not_load_fastapi():
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
-def test_base_install_has_no_optional_deps():
-    for pkg in ("fastapi", "uvicorn", "mcp"):
-        assert importlib.util.find_spec(pkg) is None, f"{pkg} installed without extra"
+def test_optional_deps_are_only_declared_as_extras():
+    # Checks the package metadata, not the current venv, so it passes with extras installed.
+    for requirement in importlib.metadata.requires("flightkit") or []:
+        name = re.split(r"[\s<>=!~;\[]", requirement, maxsplit=1)[0].lower()
+        if name in OPTIONAL_DEPS:
+            assert "extra ==" in requirement, f"{name} is a required dependency: {requirement}"

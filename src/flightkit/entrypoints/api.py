@@ -8,11 +8,12 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from flightkit.adapters.zerolook import ZerolookClient
 from flightkit.core.engine import Engine
-from flightkit.models import Search, SearchResult
+from flightkit.errors import TooManySearchesError
+from flightkit.models import Search, SearchResult, TripQuery
 
 
 @asynccontextmanager
@@ -32,3 +33,12 @@ app = FastAPI(title="Flightkit", lifespan=lifespan)
 async def search(searches: list[Search]) -> SearchResult:
     engine: Engine = app.state.engine
     return await engine.search_many(searches)
+
+
+@app.post("/trips")
+async def trips(query: TripQuery) -> SearchResult:
+    engine: Engine = app.state.engine
+    try:
+        return await engine.search_trips(query)
+    except TooManySearchesError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e

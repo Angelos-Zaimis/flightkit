@@ -2,17 +2,26 @@
 
 import asyncio
 
+from flightkit.core.expand import DEFAULT_MAX_SEARCHES, expand
 from flightkit.core.ports import Cache, FareSource
-from flightkit.models import PricedTrip, Search, SearchFailure, SearchResult
+from flightkit.models import PricedTrip, Search, SearchFailure, SearchResult, TripQuery
 
 
 class Engine:
     def __init__(
-        self, source: FareSource, *, max_concurrency: int = 10, cache: Cache | None = None
+        self,
+        source: FareSource,
+        *,
+        max_concurrency: int = 10,
+        cache: Cache | None = None,
+        max_searches: int = DEFAULT_MAX_SEARCHES,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
+        if max_searches < 1:
+            raise ValueError("max_searches must be at least 1")
         self._source = source
+        self._max_searches = max_searches
         self._limit = asyncio.Semaphore(max_concurrency)
         self._cache = cache
         self._in_flight: dict[Search, asyncio.Task[list[PricedTrip]]] = {}
@@ -34,6 +43,10 @@ class Engine:
             else:
                 trips.extend(result)
         return SearchResult(trips=tuple(trips), failures=tuple(failures))
+
+    async def search_trips(self, query: TripQuery) -> SearchResult:
+        """Search every concrete trip a TripQuery covers."""
+        return await self.search_many(expand(query, max_searches=self._max_searches))
 
     async def _search_one(self, search: Search) -> list[PricedTrip]:
         if self._cache is not None:
