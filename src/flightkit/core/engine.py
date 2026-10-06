@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from flightkit.core.expand import DEFAULT_MAX_SEARCHES, expand
 from flightkit.core.ports import Cache, FareSource
 from flightkit.core.rank import rank
+from flightkit.errors import ProviderError
 from flightkit.models import (
     PricedTrip,
     Search,
@@ -60,7 +61,8 @@ class Engine:
         for search, result in zip(searches, results, strict=True):
             if isinstance(result, Exception):
                 error = f"{type(result).__name__}: {result}"
-                failures.append(SearchFailure(search=search, error=error))
+                retryable = isinstance(result, ProviderError) and result.retryable
+                failures.append(SearchFailure(search=search, error=error, retryable=retryable))
             elif isinstance(result, BaseException):
                 raise result
             else:
