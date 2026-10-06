@@ -110,10 +110,7 @@ server (`mcp`, in progress) are optional extras.
 ```python
 import asyncio
 
-from flightkit.adapters.zerolook import ZerolookClient
-from flightkit.core.cache import MemoryCache
-from flightkit.core.engine import Engine
-from flightkit.models import TripQuery
+from flightkit import Engine, MemoryCache, TripQuery, ZerolookClient
 
 
 async def main() -> None:
@@ -243,7 +240,8 @@ plus mypy, ruff, pip-audit and a package build.
 - [ ] Fallback to live fares for low-confidence predictions
 - [ ] MCP server, so AI agents can call `search_trips` as a tool
 - [ ] Benchmarks against exhaustive search
-- [ ] Top-level public API and PyPI release
+- [x] Top-level public API
+- [ ] PyPI release
 
 ## Disclaimer
 
