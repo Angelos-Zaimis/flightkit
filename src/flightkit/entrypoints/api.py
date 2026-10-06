@@ -11,9 +11,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from flightkit.adapters.zerolook import ZerolookClient
+from flightkit.core.cache import MemoryCache
 from flightkit.core.engine import Engine
 from flightkit.errors import TooManySearchesError
-from flightkit.models import Search, SearchResult, TripQuery
+from flightkit.models import Search, SearchResult, TripQuery, TripResult
 
 
 @asynccontextmanager
@@ -22,7 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         base_url=os.environ.get("ZEROLOOK_BASE_URL", "http://localhost:9000"),
         api_key=os.environ.get("ZEROLOOK_API_KEY", "dev"),
     ) as client:
-        app.state.engine = Engine(client)
+        app.state.engine = Engine(client, max_concurrency=20, cache=MemoryCache())
         yield
 
 
@@ -36,7 +37,7 @@ async def search(searches: list[Search]) -> SearchResult:
 
 
 @app.post("/trips")
-async def trips(query: TripQuery) -> SearchResult:
+async def trips(query: TripQuery) -> TripResult:
     engine: Engine = app.state.engine
     try:
         return await engine.search_trips(query)

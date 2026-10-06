@@ -122,8 +122,41 @@ class SearchFailure(FlightkitModel):
     error: str
 
 
+class SearchStats(FlightkitModel):
+    """How a batch of searches was served."""
+
+    searches: int = Field(default=0, description="Concrete searches requested.")
+    cache_hits: int = Field(default=0, description="Searches answered from the cache.")
+    coalesced: int = Field(default=0, description="Searches that shared an in-flight call.")
+    calls: int = Field(default=0, description="Searches sent to the fare source.")
+    failures: int = Field(default=0, description="Searches that failed.")
+
+
 class SearchResult(FlightkitModel):
     """Trips found across many searches, plus any searches that failed."""
 
     trips: tuple[PricedTrip, ...] = ()
     failures: tuple[SearchFailure, ...] = ()
+    stats: SearchStats = SearchStats()
+
+
+class CurrencyResult(FlightkitModel):
+    """Ranked trips that share one currency."""
+
+    trips: tuple[PricedTrip, ...] = Field(description="All trips, cheapest first.")
+    cheapest_by_destination: dict[str, PricedTrip] = Field(
+        description="Cheapest trip per destination airport, cheapest first."
+    )
+    calendar: dict[date, PricedTrip] = Field(
+        description="Cheapest trip per departure date, in date order."
+    )
+
+
+class TripResult(FlightkitModel):
+    """The answer to a TripQuery: ranked trips per currency, failures, and stats."""
+
+    currencies: dict[str, CurrencyResult] = Field(
+        description="Results grouped by currency code. Prices are only compared within a currency."
+    )
+    failures: tuple[SearchFailure, ...] = ()
+    stats: SearchStats = SearchStats()
