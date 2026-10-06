@@ -4,6 +4,7 @@
 ![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)
 ![Typed](https://img.shields.io/badge/typing-mypy%20strict-informational)
 ![Lint](https://img.shields.io/badge/lint-ruff-informational)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 An async Python SDK for searching flight prices at scale.
 
@@ -291,6 +292,10 @@ plus mypy, ruff, pip-audit and a package build.
 - [ ] Benchmarks against exhaustive search
 - [x] Top-level public API
 - [ ] PyPI release
+
+## License
+
+MIT. See [LICENSE](LICENSE). Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Disclaimer
 
