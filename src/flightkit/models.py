@@ -69,3 +69,17 @@ class PricedTrip(FlightkitModel):
         if self.source == "prediction" and self.confidence is None:
             raise ValueError("confidence is required when source is 'prediction'")
         return self
+
+
+class SearchFailure(FlightkitModel):
+    """A search that could not be completed."""
+
+    search: Search
+    error: str
+
+
+class SearchResult(FlightkitModel):
+    """Trips found across many searches, plus any searches that failed."""
+
+    trips: tuple[PricedTrip, ...] = ()
+    failures: tuple[SearchFailure, ...] = ()

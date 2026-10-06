@@ -56,6 +56,15 @@ strict = true
 packages = ["flightkit"]
 mypy_path = "src"
 
+# Optional extras may be missing in the base environment.
+[[tool.mypy.overrides]]
+module = ["fastapi.*", "uvicorn.*", "mcp.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["flightkit.entrypoints.*"]
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
