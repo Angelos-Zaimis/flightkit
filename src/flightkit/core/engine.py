@@ -2,16 +2,19 @@
 
 import asyncio
 
-from flightkit.core.ports import FareSource
+from flightkit.core.ports import Cache, FareSource
 from flightkit.models import PricedTrip, Search, SearchFailure, SearchResult
 
 
 class Engine:
-    def __init__(self, source: FareSource, *, max_concurrency: int = 10) -> None:
+    def __init__(
+        self, source: FareSource, *, max_concurrency: int = 10, cache: Cache | None = None
+    ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
         self._source = source
         self._limit = asyncio.Semaphore(max_concurrency)
+        self._cache = cache
 
     async def search_many(self, searches: list[Search]) -> SearchResult:
         results = await asyncio.gather(
@@ -32,5 +35,14 @@ class Engine:
         return SearchResult(trips=tuple(trips), failures=tuple(failures))
 
     async def _search_one(self, search: Search) -> list[PricedTrip]:
+        if self._cache is not None:
+            cached = await self._cache.get(search)
+            if cached is not None:
+                return cached
+
         async with self._limit:
-            return await self._source.search(search)
+            trips = await self._source.search(search)
+
+        if self._cache is not None:
+            await self._cache.set(search, trips)
+        return trips
