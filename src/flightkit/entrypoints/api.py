@@ -32,12 +32,14 @@ app = FastAPI(title="Flightkit", lifespan=lifespan)
 
 @app.post("/search")
 async def search(searches: list[Search]) -> SearchResult:
+    """Run concrete searches and return the raw trips, failures and stats."""
     engine: Engine = app.state.engine
     return await engine.search_many(searches)
 
 
 @app.post("/trips")
 async def trips(query: TripQuery) -> TripResult:
+    """Run a flexible trip query and return ranked results per currency."""
     engine: Engine = app.state.engine
     try:
         return await engine.search_trips(query)

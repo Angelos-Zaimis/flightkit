@@ -298,9 +298,12 @@ nights and 1–9 passengers.
 ```
 src/flightkit/
   models.py     domain models (Search, TripQuery, PricedTrip, results)
+  errors.py     FlightkitError and the provider error hierarchy
   core/         engine, expand, rank, cache (pure logic, no I/O)
-  adapters/     provider integrations implementing the core's ports
+  adapters/     provider integrations implementing the core's ports, plus FakeZerolook
   entrypoints/  optional HTTP (FastAPI) and MCP front ends
+examples/       runnable demo
+scripts/        local fake Zerolook HTTP server
 ```
 
 Dependencies point inward: entrypoints and adapters depend on the core, never the other way
@@ -328,13 +331,13 @@ plus mypy, ruff, pip-audit and a package build.
 
 - [x] Concurrent search engine with caching, coalescing, retries and partial results
 - [x] Flexible trip queries and ranked results
+- [x] Top-level public API and typed errors
 - [x] FastAPI service
-- [ ] Coarse-to-fine search: sample the date range first, then refine around the cheapest and
-      least certain prices
-- [ ] Fallback to live fares for low-confidence predictions
 - [x] MCP server, so AI agents can call `search_trips` as a tool
-- [ ] Benchmarks against exhaustive search
-- [x] Top-level public API
+- [ ] Adaptive date search: sample departure days, learn which weekdays are cheapest and only
+      search closely there, with benchmarks against searching every day
+- [ ] Real Zerolook request and response format, once the API is documented
+- [ ] Fallback to live fares for low-confidence predictions
 - [ ] PyPI release
 
 ## License

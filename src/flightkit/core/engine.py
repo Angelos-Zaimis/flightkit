@@ -1,4 +1,4 @@
-"""Search engine: fan-out and fallback."""
+"""Search engine: fan-out, caching and request coalescing."""
 
 import asyncio
 from dataclasses import dataclass

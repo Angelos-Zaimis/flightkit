@@ -1,1 +1,0 @@
-"""Live fares adapter."""

@@ -73,9 +73,11 @@ class FakeZerolook:
         self._rng = random.Random(seed)
 
     def transport(self) -> httpx.MockTransport:
+        """An httpx transport to pass to ZerolookClient(transport=...)."""
         return httpx.MockTransport(self.handle)
 
     async def handle(self, request: httpx.Request) -> httpx.Response:
+        """Answer one HTTP request the way the Zerolook API would."""
         self.requests += 1
         await asyncio.sleep(self._rng.uniform(*self.latency))
 

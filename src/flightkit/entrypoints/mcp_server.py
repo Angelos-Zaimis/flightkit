@@ -34,6 +34,8 @@ FAILURE_EXAMPLES = 3
 
 
 class TripOption(BaseModel):
+    """One trip, flattened for an assistant to read."""
+
     destination: str
     depart_date: date
     return_date: date | None
@@ -48,12 +50,16 @@ class TripOption(BaseModel):
 
 
 class DayPrice(BaseModel):
+    """The cheapest price found for one departure day."""
+
     depart_date: date
     price: str
     destination: str
 
 
 class CurrencySummary(BaseModel):
+    """Ranked results for one currency."""
+
     currency: str
     cheapest_by_destination: list[TripOption]
     best_trips: list[TripOption] = Field(description=f"Up to {BEST_TRIPS} cheapest trips overall.")
@@ -61,6 +67,8 @@ class CurrencySummary(BaseModel):
 
 
 class TripSummary(BaseModel):
+    """Compact answer to a trip search."""
+
     simulated: bool = Field(description="True if prices come from a simulation, not Zerolook.")
     searches: int = Field(description="Concrete searches the query covered.")
     provider_calls: int
@@ -72,6 +80,8 @@ class TripSummary(BaseModel):
 
 
 class SearchEstimate(BaseModel):
+    """How big a trip query is, before running it."""
+
     searches: int
     limit: int
     within_limit: bool
@@ -143,6 +153,7 @@ async def estimate_search(query: TripQuery) -> SearchEstimate:
 
 
 def main() -> None:
+    """Run the server over stdio. Installed as the `flightkit-mcp` command."""
     server.run("stdio")
 
 
