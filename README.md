@@ -227,6 +227,9 @@ assistant's context.
 
 ## Running the HTTP API
 
+The FastAPI app is meant for local use and demos. It has no authentication or per-client
+rate limiting, so put it behind something that does before exposing it.
+
 ```bash
 export ZEROLOOK_BASE_URL=https://...    # defaults to http://localhost:9000
 export ZEROLOOK_API_KEY=...
