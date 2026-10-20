@@ -38,6 +38,8 @@ services and AI agents, where cost per query and rate limits matter more than an
 - **Provider-agnostic core.** The engine depends on a small `FareSource` protocol; providers
   plug in as adapters.
 - **Optional HTTP API.** A FastAPI app for running flightkit as a service.
+- **MCP server.** AI assistants such as Claude can use flightkit as a tool, turning a request
+  like "a cheap week in Greece in June" into a structured search.
 
 ## How a search flows
 
@@ -101,10 +103,11 @@ git clone https://github.com/Angelos-Zaimis/flightkit.git
 cd flightkit
 uv sync                  # library + dev tools
 uv sync --extra api      # add the FastAPI app
+uv sync --extra mcp      # add the MCP server
 ```
 
 The library itself depends only on `httpx` and `pydantic`. The HTTP API (`api`) and the MCP
-server (`mcp`, in progress) are optional extras.
+server (`mcp`) are optional extras.
 
 ## Try it without an API key
 
@@ -180,6 +183,47 @@ searches=84 cache_hits=0 coalesced=0 calls=84 failures=0
 
 Calling `search_trips` again on the same engine within the TTL is served from the cache
 (`cache_hits=84 calls=0`).
+
+## Use it from Claude
+
+flightkit ships an [MCP](https://modelcontextprotocol.io) server, so assistants such as Claude
+can search flights through it. Without a `ZEROLOOK_API_KEY` it runs on simulated prices and
+says so in every answer, which is enough to try it out.
+
+**Claude Code**
+
+```bash
+claude mcp add flightkit -- uv --directory /path/to/flightkit run --extra mcp flightkit-mcp
+```
+
+**Claude Desktop**: add this to `claude_desktop_config.json` (on macOS in
+`~/Library/Application Support/Claude/`) and restart the app:
+
+```json
+{
+  "mcpServers": {
+    "flightkit": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/flightkit", "run", "--extra", "mcp", "flightkit-mcp"],
+      "env": { "ZEROLOOK_API_KEY": "" }
+    }
+  }
+}
+```
+
+Leave the key empty for simulated prices. If the app can't find `uv`, use the full path from
+`which uv` as the command.
+
+Then ask something like *"Find me the cheapest week in Athens, Crete or Santorini in the first
+half of June 2027, flying from Zurich."*
+
+| Tool | What it does |
+|---|---|
+| `search_trips` | Runs a `TripQuery` and returns the cheapest trip per destination, the 10 best trips, a cheapest-per-day calendar and search stats |
+| `estimate_search` | Says how many searches a query needs before running it, with advice if it's over the limit |
+
+Both are read-only. Answers are kept compact (a few kilobytes) so they fit comfortably in the
+assistant's context.
 
 ## Running the HTTP API
 
@@ -288,7 +332,7 @@ plus mypy, ruff, pip-audit and a package build.
 - [ ] Coarse-to-fine search: sample the date range first, then refine around the cheapest and
       least certain prices
 - [ ] Fallback to live fares for low-confidence predictions
-- [ ] MCP server, so AI agents can call `search_trips` as a tool
+- [x] MCP server, so AI agents can call `search_trips` as a tool
 - [ ] Benchmarks against exhaustive search
 - [x] Top-level public API
 - [ ] PyPI release

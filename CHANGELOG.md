@@ -7,6 +7,13 @@ changes.
 
 ## [Unreleased]
 
+### Added
+
+- MCP server (`flightkit[mcp]`, run as `flightkit-mcp`) with two read-only tools:
+  `search_trips`, which returns a compact summary of the cheapest trips, and `estimate_search`,
+  which reports how many searches a query needs. Without `ZEROLOOK_API_KEY` it uses simulated
+  prices and marks every answer as simulated.
+
 ## [0.1.0] - 2026-10-06
 
 First release.
