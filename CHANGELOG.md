@@ -7,6 +7,8 @@ changes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
 ### Fixed
 
 - The `mcp` extra now requires mcp 2.x. The server uses the 2.x API, so with an older mcp
@@ -46,6 +48,7 @@ First release.
 - Optional FastAPI app (`flightkit[api]`) with `POST /trips` and `POST /search`.
 - Top-level public API: `from flightkit import Engine, TripQuery, ...`.
 
-[Unreleased]: https://github.com/Angelos-Zaimis/flightkit/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Angelos-Zaimis/flightkit/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Angelos-Zaimis/flightkit/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Angelos-Zaimis/flightkit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Angelos-Zaimis/flightkit/releases/tag/v0.1.0
