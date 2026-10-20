@@ -1,6 +1,6 @@
 [project]
 name = "flightkit"
-version = "0.2.0"
+version = "0.2.1"
 description = "Async SDK and MCP server for flight-price search: flexible trip queries, bounded fan-out, caching, request coalescing and ranked results."
 readme = "README.md"
 requires-python = ">=3.10"
