@@ -1,3 +1,5 @@
+"""Domain models: what callers send, and what flightkit returns."""
+
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -26,6 +28,8 @@ MAX_DATE_RANGE_DAYS = 60
 
 
 class FlightkitModel(BaseModel):
+    """Base for flightkit models: immutable, strict about unknown fields, trims strings."""
+
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
@@ -34,6 +38,8 @@ class FlightkitModel(BaseModel):
 
 
 class Search(FlightkitModel):
+    """One concrete search: a route, a departure day and an optional return day."""
+
     origin: IataCode
     destination: IataCode
     depart_date: date
@@ -94,11 +100,15 @@ class TripQuery(FlightkitModel):
 
 
 class Price(FlightkitModel):
+    """An exact amount in one currency."""
+
     amount: Decimal = Field(ge=0)
     currency: CurrencyCode
 
 
 class PricedTrip(FlightkitModel):
+    """A bookable trip with its price, as returned by a fare source."""
+
     price: Price
     confidence: float | None = Field(default=None, ge=0, le=1)
     carrier: AirlineCode

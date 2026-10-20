@@ -1,4 +1,4 @@
-"""Expand a search into concrete searches."""
+"""Expand a TripQuery into concrete searches."""
 
 from datetime import timedelta
 
@@ -33,6 +33,7 @@ def expand(query: TripQuery, *, max_searches: int = DEFAULT_MAX_SEARCHES) -> lis
 
 
 def count_searches(query: TripQuery) -> int:
+    """How many searches `expand` would produce for this query."""
     return len(query.destinations) * _days(query) * len(_night_options(query))
 
 

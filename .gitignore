@@ -19,8 +19,3 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-
-# Personal notes
-COMMANDS.txt
-WORKFLOW.md
-learning/

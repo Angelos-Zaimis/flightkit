@@ -7,6 +7,11 @@ changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The `mcp` extra now requires mcp 2.x. The server uses the 2.x API, so with an older mcp
+  installed `flightkit-mcp` failed to start.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added

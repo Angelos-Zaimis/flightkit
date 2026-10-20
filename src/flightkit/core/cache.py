@@ -27,6 +27,7 @@ class MemoryCache:
         self._entries: OrderedDict[Search, tuple[float, tuple[PricedTrip, ...]]] = OrderedDict()
 
     async def get(self, search: Search) -> list[PricedTrip] | None:
+        """Return a copy of the stored trips, or None if missing or expired."""
         entry = self._entries.get(search)
         if entry is None:
             return None
@@ -38,6 +39,7 @@ class MemoryCache:
         return list(trips)
 
     async def set(self, search: Search, trips: list[PricedTrip]) -> None:
+        """Store trips for a search, evicting the least recently used entry if full."""
         self._entries[search] = (self._clock(), tuple(trips))
         self._entries.move_to_end(search)
         while len(self._entries) > self._max_entries:
